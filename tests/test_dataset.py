@@ -41,6 +41,7 @@ def test_load_config_training_fields(video_games_config_path):
     assert config.training.batch_size == 128
     assert config.training.train_steps == 10000
     assert config.training.steps_per_eval == 500
+    assert config.training.steps_per_loop == 100
     assert config.training.model_dir == "runs/video_games"
 
 
