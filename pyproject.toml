@@ -11,8 +11,7 @@ dependencies = [
     "pyyaml>=6.0",
     "requests>=2.32",
     "tqdm>=4.67",
-    "recml",
-    # RecML transitive deps
+    # RecML transitive deps (RecML itself is on PYTHONPATH via .env)
     "absl-py>=2.0",
     "orbax-checkpoint>=0.11",
     "optax>=0.2",
@@ -36,9 +35,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hstu_rec"]
-
-[tool.uv.sources]
-recml = { path = "vendor/RecML", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
