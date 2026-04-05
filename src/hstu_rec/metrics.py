@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+
+class NDCGAtK:
+    """Normalised Discounted Cumulative Gain @ K as a Keras metric.
+
+    Expects:
+        y_true: int32 tensor of shape (batch,) — ground-truth item IDs
+        y_pred: float32 tensor of shape (batch, vocab_size+1) — logits
+
+    Usage:
+        metric = NDCGAtK(k=10, name="ndcg@10")
+        model.compile(..., metrics=[metric])
+    """
+
+    def __new__(cls, k: int = 10, name: str | None = None, **kwargs):
+        import keras  # lazy import
+        import tensorflow as tf  # lazy import
+
+        class _NDCGAtK(keras.metrics.Metric):
+            def __init__(self, k: int = 10, name: str = "ndcg_at_k", **kwargs):
+                super().__init__(name=name, **kwargs)
+                self.k = k
+                self._total = self.add_weight(name="total", initializer="zeros")
+                self._count = self.add_weight(name="count", initializer="zeros")
+
+            def update_state(self, y_true, y_pred, sample_weight=None):
+                # y_true: (batch,)  y_pred: (batch, vocab)
+                y_true = tf.cast(y_true, tf.int32)
+                # top-k indices per example: (batch, k)
+                _, top_k_ids = tf.math.top_k(y_pred, k=self.k)
+                top_k_ids = tf.cast(top_k_ids, tf.int32)
+
+                # position of true item in top-k (-1 if absent)
+                y_true_exp = tf.expand_dims(y_true, axis=1)        # (batch, 1)
+                matches = tf.equal(top_k_ids, y_true_exp)           # (batch, k)
+                found = tf.reduce_any(matches, axis=1)              # (batch,)
+
+                # rank (0-indexed) of the first match
+                ranks = tf.argmax(tf.cast(matches, tf.int32), axis=1)  # (batch,)
+
+                # NDCG contribution: log2(2) / log2(rank+2)
+                ranks_f = tf.cast(ranks, tf.float32)
+                gain = tf.math.log(2.0) / tf.math.log(ranks_f + 2.0)
+                gain = tf.where(found, gain, tf.zeros_like(gain))
+
+                if sample_weight is not None:
+                    sample_weight = tf.cast(sample_weight, tf.float32)
+                    gain = gain * sample_weight
+
+                self._total.assign_add(tf.reduce_sum(gain))
+                self._count.assign_add(tf.cast(tf.shape(y_true)[0], tf.float32))
+
+            def result(self):
+                return tf.math.divide_no_nan(self._total, self._count)
+
+            def reset_state(self):
+                self._total.assign(0.0)
+                self._count.assign(0.0)
+
+            def get_config(self):
+                return {"k": self.k, "name": self.name}
+
+        return _NDCGAtK(k=k, name=name or f"ndcg_at_{k}", **kwargs)
