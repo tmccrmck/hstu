@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# uv
+.python-version
+
+# Environment
+.env
+
+# Data and model outputs
+data/
+runs/
+*.tfrecord
+*.jsonl
+*.jsonl.gz
+item_map.json
+vocab_size.txt
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
