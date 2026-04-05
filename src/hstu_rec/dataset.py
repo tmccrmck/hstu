@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
-from typing import Optional
-
 import yaml
 
 
@@ -16,7 +14,7 @@ class DatasetConfig:
 
 @dataclasses.dataclass
 class ModelConfig:
-    vocab_size: Optional[int]
+    vocab_size: int | None
     max_sequence_length: int
     model_dim: int
     num_heads: int
@@ -41,7 +39,7 @@ class Config:
     training: TrainingConfig
 
 
-def load_config(path: str) -> Config:
+def load_config(path: str | Path) -> Config:
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Config file not found: {path}")

@@ -1,13 +1,12 @@
-import os
 import pytest
-import tempfile
 import yaml
+from pathlib import Path
 from hstu_rec.dataset import Config, DatasetConfig, ModelConfig, TrainingConfig, load_config
 
 
 @pytest.fixture
 def video_games_config_path():
-    return os.path.join(os.path.dirname(__file__), "..", "configs", "video_games.yaml")
+    return Path(__file__).parent.parent / "configs" / "video_games.yaml"
 
 
 def test_load_config_returns_config_instance(video_games_config_path):
