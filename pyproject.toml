@@ -1,0 +1,44 @@
+[project]
+name = "hstu-rec"
+version = "0.1.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "keras>=3.9",
+    "jax[cpu]",  # use jax[cuda12] for GPU training
+    "tensorflow>=2.19",
+    "tensorflow-io-gcs-filesystem",
+    "pandas>=2.0",
+    "pyyaml>=6.0",
+    "requests>=2.32",
+    "tqdm>=4.67",
+    "recml",
+    # RecML transitive deps
+    "absl-py>=2.0",
+    "orbax-checkpoint>=0.11",
+    "optax>=0.2",
+    "fiddle>=0.3",
+    "keras-hub>=0.20",
+    "clu",
+    "chex",
+    "einops",
+    "flax",
+    "jaxtyping",
+    "tensorflow-datasets",
+]
+
+[project.scripts]
+preprocess = "hstu_rec.preprocess:main"
+train      = "hstu_rec.train:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hstu_rec"]
+
+[tool.uv.sources]
+recml = { path = "vendor/RecML", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

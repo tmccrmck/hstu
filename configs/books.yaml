@@ -1,0 +1,20 @@
+dataset:
+  name: books
+  review_url: https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/raw/review_categories/Books.jsonl.gz
+  min_interactions: 5
+
+model:
+  vocab_size: null
+  max_sequence_length: 50
+  model_dim: 128
+  num_heads: 4
+  num_layers: 4
+  dropout: 0.5
+  learning_rate: 0.001
+
+training:
+  batch_size: 256
+  train_steps: 50000
+  steps_per_eval: 1000
+  steps_per_loop: 100
+  model_dir: runs/books

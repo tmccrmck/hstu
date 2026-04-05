@@ -1,0 +1,3 @@
+[submodule "vendor/RecML"]
+	path = vendor/RecML
+	url = https://github.com/AI-Hypercomputer/RecML.git
