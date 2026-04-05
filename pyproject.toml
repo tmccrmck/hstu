@@ -38,3 +38,9 @@ packages = ["src/hstu_rec"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["vendor/RecML", "src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
