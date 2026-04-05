@@ -39,6 +39,8 @@ packages = ["src/hstu_rec"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["vendor/RecML", "src"]
+markers = ["slow: tests that import TensorFlow/JAX/Keras (skip locally, run on GPU machine)"]
+addopts = "-m 'not slow'"
 
 [dependency-groups]
 dev = [
