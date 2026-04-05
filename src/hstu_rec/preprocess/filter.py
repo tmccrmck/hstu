@@ -23,6 +23,9 @@ def filter_reviews(jsonl_path: str | Path, min_interactions: int) -> pd.DataFram
     rows = []
     with open(jsonl_path) as f:
         for line in f:
+            line = line.strip()
+            if not line:
+                continue
             obj = json.loads(line)
             rows.append({
                 "user_id": str(obj["user_id"]),
@@ -30,8 +33,7 @@ def filter_reviews(jsonl_path: str | Path, min_interactions: int) -> pd.DataFram
                 "timestamp": int(obj["timestamp"]),
             })
     df = pd.DataFrame(rows, columns=["user_id", "parent_asin", "timestamp"])
-    df["user_id"] = df["user_id"].astype(object)
-    df["parent_asin"] = df["parent_asin"].astype(object)
+    df = df.astype({"user_id": object, "parent_asin": object, "timestamp": "int64"})
 
     while True:
         user_counts = df["user_id"].value_counts()
@@ -45,4 +47,4 @@ def filter_reviews(jsonl_path: str | Path, min_interactions: int) -> pd.DataFram
             break
         df = filtered.reset_index(drop=True)
 
-    return df.reset_index(drop=True)
+    return df
