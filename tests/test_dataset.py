@@ -35,6 +35,7 @@ def test_load_config_model_fields(video_games_config_path):
     assert config.model.num_layers == 4
     assert config.model.dropout == 0.5
     assert config.model.learning_rate == pytest.approx(1e-3)
+    assert config.model.use_timestamps is False
 
 
 def test_load_config_training_fields(video_games_config_path):
@@ -44,6 +45,7 @@ def test_load_config_training_fields(video_games_config_path):
     assert config.training.steps_per_eval == 500
     assert config.training.steps_per_loop == 100
     assert config.training.model_dir == "runs/video_games"
+    assert config.training.num_sampled == 1000
 
 
 def test_load_config_missing_file():

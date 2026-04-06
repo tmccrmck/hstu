@@ -95,6 +95,7 @@ def build_model(
     dropout: float,
     learning_rate: float,
     num_sampled: int = 10000,
+    use_timestamps: bool = False,
 ) -> "keras.Model":
     """Build and compile the HSTU next-item prediction model.
 
@@ -117,9 +118,55 @@ def build_model(
     """
     import keras
     from recml.layers.keras.hstu import HSTU
+    from recml.layers.keras import utils as hstu_utils
     from hstu_rec.metrics import NDCGAtK
 
     vocab_size_with_pad = vocab_size + 1  # index 0 = padding
+
+    # Thin HSTU subclass that forwards attention_bias to each HSTUBlock.
+    # The upstream HSTU.call() accepts attention_bias in its signature but
+    # never passes it through to the decoder blocks; this override fixes that.
+    class _TimestampHSTU(HSTU):
+        def call(
+            self,
+            inputs,
+            padding_mask=None,
+            attention_mask=None,
+            mask_positions=None,
+            attention_bias=None,
+            training=False,
+        ):
+            embeddings = self.item_embedding(inputs)
+            if self._scale_by_sqrt_dim:
+                embeddings *= keras.ops.cast(
+                    self._model_dim ** 0.5, keras.ops.dtype(embeddings)
+                )
+            if self.position_embedding is not None:
+                embeddings += self.position_embedding(embeddings)
+
+            embeddings = self.final_norm(embeddings)
+            embeddings = self.embeddings_dropout(embeddings, training=training)
+
+            if attention_mask is None:
+                if padding_mask is None:
+                    raise ValueError(
+                        "Either `attention_mask` or `padding_mask` must be set."
+                    )
+                attention_mask = hstu_utils.make_causal_mask(padding_mask)
+
+            for decoder_block in self.decoder_blocks:
+                embeddings = decoder_block(
+                    embeddings,
+                    attention_mask=attention_mask,
+                    attention_bias=attention_bias,
+                    training=training,
+                )
+
+            embeddings = self.final_norm(embeddings)
+
+            if not self._add_head:
+                return embeddings
+            return self.item_embedding(embeddings, reverse=True)
 
     class HSTURecommender(keras.Model):
         """HSTU recommender with sampled softmax training and NDCG@10 eval."""
@@ -128,7 +175,9 @@ def build_model(
             super().__init__(name="hstu_rec")
             self._vocab_size = vocab_size
             self._model_dim = model_dim
-            self.hstu = HSTU(
+            # Always use _TimestampHSTU — it accepts attention_bias=None and
+            # behaves identically to HSTU when no bias is supplied.
+            self.hstu = _TimestampHSTU(
                 vocab_size=vocab_size_with_pad,
                 model_dim=model_dim,
                 num_heads=num_heads,
@@ -137,6 +186,13 @@ def build_model(
                 add_head=False,  # keep model_dim output; we project manually
                 name="hstu",
             )
+            if use_timestamps:
+                from recml.layers.keras.hstu import RelativeBucketedTimeAndPositionBasedBias
+                self.time_bias = RelativeBucketedTimeAndPositionBasedBias(
+                    name="time_bias"
+                )
+            else:
+                self.time_bias = None
             self.last_token = LastNonPaddingToken(name="last_token")
             self._loss_tracker = keras.metrics.Mean(name="loss")
             self._ndcg_metric = NDCGAtK(k=10)
@@ -158,7 +214,21 @@ def build_model(
             """
             input_ids = inputs["input_ids"]
             padding_mask = keras.ops.cast(input_ids, "bool")
-            seq_out = self.hstu(input_ids, padding_mask=padding_mask, training=training)
+
+            attention_bias = None
+            if self.time_bias is not None:
+                # timestamps: (batch, seq_len) int32 Unix seconds
+                # RelativeBucketedTimeAndPositionBasedBias computes pairwise
+                # log-bucketed time differences → (batch, seq_len, seq_len)
+                timestamps = keras.ops.cast(inputs["timestamps"], "int32")
+                attention_bias = self.time_bias(timestamps)
+
+            seq_out = self.hstu(
+                input_ids,
+                padding_mask=padding_mask,
+                attention_bias=attention_bias,
+                training=training,
+            )
             user_emb = self.last_token(seq_out, input_ids)
             if training:
                 return user_emb
@@ -232,6 +302,7 @@ def main(config_path: str | None = None, data_dir: str | None = None) -> None:
         dropout=config.model.dropout,
         learning_rate=config.model.learning_rate,
         num_sampled=config.training.num_sampled,
+        use_timestamps=config.model.use_timestamps,
     )
 
     train_ds = make_data_factory(config, data_dir, "train").make()

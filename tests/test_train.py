@@ -105,6 +105,29 @@ def test_build_model_training_output_shape():
 
 
 @pytest.mark.slow
+def test_build_model_with_timestamps():
+    """Model with use_timestamps=True accepts timestamps in input dict."""
+    import tensorflow as tf
+    from hstu_rec.train import build_model
+
+    model = build_model(
+        vocab_size=10,
+        max_sequence_length=5,
+        model_dim=16,
+        num_heads=2,
+        num_layers=1,
+        dropout=0.0,
+        learning_rate=1e-3,
+        num_sampled=50,
+        use_timestamps=True,
+    )
+    input_ids  = tf.constant([[1, 2, 3, 0, 0], [4, 5, 0, 0, 0]], dtype=tf.int32)
+    timestamps = tf.constant([[100, 200, 300, 0, 0], [400, 500, 0, 0, 0]], dtype=tf.int32)
+    logits = model({"input_ids": input_ids, "timestamps": timestamps}, training=False)
+    assert logits.shape == (2, 11)  # vocab_size + 1
+
+
+@pytest.mark.slow
 def test_build_model_is_compiled():
     from hstu_rec.train import build_model
 

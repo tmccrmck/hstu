@@ -85,6 +85,7 @@ def main(
         dropout=0.0,  # no dropout at eval time
         learning_rate=config.model.learning_rate,
         num_sampled=config.training.num_sampled,
+        use_timestamps=config.model.use_timestamps,
     )
 
     # Build weights by running a single dummy forward pass, then load checkpoint.

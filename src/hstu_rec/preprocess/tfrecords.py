@@ -28,10 +28,13 @@ def write_tfrecords(df: pd.DataFrame, max_seq_len: int, output_dir: str | Path) 
     """
     import tensorflow as tf  # lazy import — keeps module importable without TF on PATH
 
-    def _make_example(input_ids: list[int], target_id: int) -> tf.train.Example:
+    def _make_example(
+        input_ids: list[int], timestamps: list[int], target_id: int
+    ) -> tf.train.Example:
         return tf.train.Example(features=tf.train.Features(feature={
-            "input_ids": tf.train.Feature(int64_list=tf.train.Int64List(value=input_ids)),
-            "target_id": tf.train.Feature(int64_list=tf.train.Int64List(value=[target_id])),
+            "input_ids":  tf.train.Feature(int64_list=tf.train.Int64List(value=input_ids)),
+            "timestamps": tf.train.Feature(int64_list=tf.train.Int64List(value=timestamps)),
+            "target_id":  tf.train.Feature(int64_list=tf.train.Int64List(value=[target_id])),
         }))
 
     out = Path(output_dir)
@@ -52,21 +55,32 @@ def write_tfrecords(df: pd.DataFrame, max_seq_len: int, output_dir: str | Path) 
     test_writer = tf.io.TFRecordWriter(str(out / "test.tfrecord"))
 
     for _user_id, user_df in df.groupby("user_id"):
-        seq = [
-            item_map[asin]
-            for asin in user_df.sort_values("timestamp")["parent_asin"]
-        ]
-        L = len(seq)
+        sorted_df = user_df.sort_values("timestamp")
+        seq = [item_map[asin] for asin in sorted_df["parent_asin"]]
+        ts  = sorted_df["timestamp"].tolist()
+        L   = len(seq)
 
         test_writer.write(
-            _make_example(_pad_left(seq[:-1], max_seq_len), seq[-1]).SerializeToString()
+            _make_example(
+                _pad_left(seq[:-1], max_seq_len),
+                _pad_left(ts[:-1],  max_seq_len),
+                seq[-1],
+            ).SerializeToString()
         )
         val_writer.write(
-            _make_example(_pad_left(seq[:-2], max_seq_len), seq[-2]).SerializeToString()
+            _make_example(
+                _pad_left(seq[:-2], max_seq_len),
+                _pad_left(ts[:-2],  max_seq_len),
+                seq[-2],
+            ).SerializeToString()
         )
         for j in range(1, L - 2):
             train_writer.write(
-                _make_example(_pad_left(seq[:j], max_seq_len), seq[j]).SerializeToString()
+                _make_example(
+                    _pad_left(seq[:j], max_seq_len),
+                    _pad_left(ts[:j],  max_seq_len),
+                    seq[j],
+                ).SerializeToString()
             )
 
     train_writer.close()

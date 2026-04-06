@@ -23,6 +23,7 @@ class ModelConfig:
     num_layers: int
     dropout: float
     learning_rate: float
+    use_timestamps: bool = False
 
 
 @dataclasses.dataclass
@@ -75,20 +76,23 @@ def parse_tfrecord_fn(max_sequence_length: int) -> Callable:
     """Return a function that deserialises one TFRecord example.
 
     Returns:
-        fn(serialized) -> ({"input_ids": int32[max_seq_len]}, int32[])
+        fn(serialized) -> ({"input_ids": int32[max_seq_len],
+                            "timestamps": int32[max_seq_len]}, int32[])
     """
     import tensorflow as tf  # lazy import
 
     feature_spec = {
-        "input_ids": tf.io.FixedLenFeature([max_sequence_length], tf.int64),
-        "target_id": tf.io.FixedLenFeature([1], tf.int64),
+        "input_ids":  tf.io.FixedLenFeature([max_sequence_length], tf.int64),
+        "timestamps": tf.io.FixedLenFeature([max_sequence_length], tf.int64),
+        "target_id":  tf.io.FixedLenFeature([1], tf.int64),
     }
 
     def _parse(serialized: "tf.Tensor"):
         parsed = tf.io.parse_single_example(serialized, feature_spec)
-        input_ids = tf.cast(parsed["input_ids"], tf.int32)
-        target_id = tf.cast(tf.squeeze(parsed["target_id"], axis=0), tf.int32)
-        return {"input_ids": input_ids}, target_id
+        input_ids  = tf.cast(parsed["input_ids"],  tf.int32)
+        timestamps = tf.cast(parsed["timestamps"], tf.int32)
+        target_id  = tf.cast(tf.squeeze(parsed["target_id"], axis=0), tf.int32)
+        return {"input_ids": input_ids, "timestamps": timestamps}, target_id
 
     return _parse
 
