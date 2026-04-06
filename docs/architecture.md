@@ -21,7 +21,7 @@ Amazon Reviews JSONL.gz
                           test  → seq[-1]          as target
                           val   → seq[-2]          as target
                           train → seq[j] for j in range(1, L-2) as targets
-                        Writes train/val/test.tfrecord + item_map.json + vocab_size.txt
+                        Writes train/val/test.tfrecord + item_map.parquet + vocab_size.txt
         │
         ▼
    TFRecordDataFactory  tf.data pipeline: parse → (optionally shuffle+repeat)
@@ -39,29 +39,65 @@ Item IDs: `0` = padding, real items `1..vocab_size`. The embedding table has `vo
 
 ## Model
 
+The forward pass has two modes that share all weights but differ in what they compute.
+
+### Training path (sampled softmax)
+
 ```
 input_ids  (batch, seq_len)
      │
      ▼
   HSTU (RecML)                      vocab_size+1 × model_dim tied embedding
      │  num_layers × HSTUBlock      causal pointwise attention
-     │  add_head=True               projects back to vocab via tied embedding
+     │  add_head=False              keeps model_dim representation
      ▼
-sequence logits  (batch, seq_len, vocab_size+1)
+sequence embeddings  (batch, seq_len, model_dim)
      │
      ▼
-LastNonPaddingToken                 gather the slice at the last non-zero input position
+LastNonPaddingToken                 gather slice at last non-zero input position
+     │
+     ▼
+user embedding  (batch, model_dim)
+     │
+     ▼
+_sampled_softmax_loss               sample num_sampled negatives uniformly;
+                                    compute logits for {true_item} ∪ {negatives};
+                                    cross-entropy with true item at index 0
+```
+
+Cost: O(`num_sampled × model_dim`) per step instead of O(`vocab_size × model_dim`).
+
+### Eval / inference path (full logits)
+
+```
+input_ids  (batch, seq_len)
+     │
+     ▼
+  HSTU  (same weights, add_head=False)
+     │
+     ▼
+sequence embeddings  (batch, seq_len, model_dim)
+     │
+     ▼
+LastNonPaddingToken
+     │
+     ▼
+user embedding  (batch, model_dim)
+     │
+     ▼
+user_emb @ embedding_table.T        full tied-embedding projection
      │
      ▼
 item logits  (batch, vocab_size+1)
      │
      ▼
-SparseCategoricalCrossentropy loss  trained against target_id
+NDCG@10 / HR@10                     ranked against the full catalogue
 ```
 
 **Key design choices:**
 
-- **Tied embeddings** (`add_head=True`): the output projection reuses the item embedding weights, which reduces parameter count and tends to improve generalisation on sparse recommendation data.
+- **Tied embeddings (`add_head=False` + manual projection):** the output projection reuses the item embedding weights, reducing parameter count. With `add_head=False` we control *when* the projection runs — only during eval — which is what enables sampled softmax during training.
+- **Sampled softmax:** `num_sampled` negatives are drawn uniformly each step. The gradient is a biased estimator of the full-softmax gradient but converges to the same optimum and is `vocab_size / num_sampled` times cheaper per step. Configured via `training.num_sampled` in the YAML.
 - **Causal (lower-triangular) attention mask**: generated from the padding mask so future positions can't attend to padding, and the model is autoregressive over the sequence.
 - **Left-zero-padding**: each training example is a prefix of the user's history. Padding on the left means the model always sees the most recent context in the rightmost positions, which matters for the causal mask.
 - **Leave-last-out**: standard evaluation protocol for sequential recommendation. Val and test each get exactly one example per user; training gets all intermediate positions.
@@ -98,6 +134,7 @@ training:
   steps_per_eval: 500
   steps_per_loop: 100
   model_dir: runs/video_games
+  num_sampled: 1000   # negatives per training step
 ```
 
 ---
@@ -121,10 +158,11 @@ No code changes required — Keras abstracts the backend.
 
 **Bottleneck:** Full-softmax cross-entropy over `vocab_size+1` logits is O(vocab_size) per example. Books has ~3M unique items after filtering.
 
-**Options (roughly in order of effort):**
-- **Sampled softmax** (`keras.losses.CategoricalCrossentropy` with negative sampling): sample a subset of negatives per batch. Standard in large-scale rec systems; loses some accuracy but trains 10–100× faster.
-- **Approximate nearest-neighbour retrieval at eval**: instead of scoring all items, use FAISS or ScaNN to retrieve candidates, then rerank. Eval NDCG@10 becomes approximate but is fast enough to run every few thousand steps.
-- **In-batch negatives**: treat other items in the batch as negatives. Simple to implement and effectively gives a large batch of negatives for free.
+**Training is already solved:** sampled softmax is implemented. Set `num_sampled` in the YAML (10 000 is a reasonable default for Books). The per-step cost drops from O(vocab_size) to O(num_sampled), typically 100–300× cheaper for a 3M-item catalogue.
+
+**Remaining eval bottleneck:** NDCG@10 still scores all items during validation. For very large catalogues:
+- **Approximate nearest-neighbour retrieval**: use FAISS or ScaNN to retrieve the top-1000 candidates via ANN search against pre-computed item embeddings, then compute NDCG@10 over candidates only. Eval becomes approximate but runs in sub-second per batch.
+- **In-batch negatives** (alternative training approach): treat other items in the batch as negatives — free negatives, no sampling needed, but limited to `batch_size` candidates per step.
 
 ### 3. Preprocessing memory
 
@@ -154,11 +192,11 @@ No code changes required — Keras abstracts the backend.
 
 ### Summary table
 
-| Scale            | Key change                                      |
-|------------------|-------------------------------------------------|
-| ~1M items        | `jax[cuda12]`, single GPU                      |
-| ~3M items        | Add sampled softmax or in-batch negatives       |
-| >8 GB raw data   | Chunk-based preprocessing or cloud VM          |
-| Large throughput | Shard TFRecords (128–256 shards)               |
-| Long sequences   | Increase `max_sequence_length` or chunked attn |
-| Multi-GPU        | JAX `jax_trainer.py` + device mesh             |
+| Scale            | Key change                                           |
+|------------------|------------------------------------------------------|
+| ~1M items        | `jax[cuda12]`, single GPU                           |
+| ~3M items        | Tune `num_sampled` (already implemented); ANN eval  |
+| >8 GB raw data   | Chunk-based preprocessing or cloud VM               |
+| Large throughput | Shard TFRecords (128–256 shards)                    |
+| Long sequences   | Increase `max_sequence_length` or chunked attn      |
+| Multi-GPU        | JAX `jax_trainer.py` + device mesh                  |
