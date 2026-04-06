@@ -29,6 +29,7 @@ dependencies = [
 [project.scripts]
 preprocess = "hstu_rec.preprocess:main"
 train      = "hstu_rec.train:main"
+evaluate   = "hstu_rec.evaluate:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -66,7 +66,9 @@ class TFRecordDataFactory:
         ds = ds.map(parse_fn, num_parallel_calls=tf.data.AUTOTUNE)
         if self.is_training:
             ds = ds.shuffle(buffer_size=10_000).repeat()
-        return ds.batch(self.batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+        # drop_remainder only during training (fixed batch shapes for XLA);
+        # eval/test must not discard the final partial batch
+        return ds.batch(self.batch_size, drop_remainder=self.is_training).prefetch(tf.data.AUTOTUNE)
 
 
 def parse_tfrecord_fn(max_sequence_length: int) -> Callable:

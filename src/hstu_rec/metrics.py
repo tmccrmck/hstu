@@ -62,3 +62,52 @@ class NDCGAtK:
                 return {"k": self.k, "name": self.name}
 
         return _NDCGAtK(k=k, name=name or f"ndcg_at_{k}", **kwargs)
+
+
+class HRAtK:
+    """Hit Rate @ K as a Keras metric.
+
+    A hit is when the true item appears anywhere in the top-K predictions.
+
+    Expects:
+        y_true: int32 tensor of shape (batch,) — ground-truth item IDs
+        y_pred: float32 tensor of shape (batch, vocab_size+1) — logits
+    """
+
+    def __new__(cls, k: int = 10, name: str | None = None, **kwargs):
+        import keras  # lazy import
+        import tensorflow as tf  # lazy import
+
+        class _HRAtK(keras.metrics.Metric):
+            def __init__(self, k: int = 10, name: str = "hr_at_k", **kwargs):
+                super().__init__(name=name, **kwargs)
+                self.k = k
+                self._total = self.add_weight(name="total", initializer="zeros")
+                self._count = self.add_weight(name="count", initializer="zeros")
+
+            def update_state(self, y_true, y_pred, sample_weight=None):
+                y_true = tf.cast(y_true, tf.int32)
+                _, top_k_ids = tf.math.top_k(y_pred, k=self.k)
+                top_k_ids = tf.cast(top_k_ids, tf.int32)
+
+                y_true_exp = tf.expand_dims(y_true, axis=1)           # (batch, 1)
+                hits = tf.reduce_any(tf.equal(top_k_ids, y_true_exp), axis=1)  # (batch,)
+                hits_f = tf.cast(hits, tf.float32)
+
+                if sample_weight is not None:
+                    hits_f = hits_f * tf.cast(sample_weight, tf.float32)
+
+                self._total.assign_add(tf.reduce_sum(hits_f))
+                self._count.assign_add(tf.cast(tf.shape(y_true)[0], tf.float32))
+
+            def result(self):
+                return tf.math.divide_no_nan(self._total, self._count)
+
+            def reset_state(self):
+                self._total.assign(0.0)
+                self._count.assign(0.0)
+
+            def get_config(self):
+                return {"k": self.k, "name": self.name}
+
+        return _HRAtK(k=k, name=name or f"hr_at_{k}", **kwargs)

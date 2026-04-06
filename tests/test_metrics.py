@@ -76,3 +76,57 @@ def test_ndcg_name():
 
     assert NDCGAtK(k=10).name == "ndcg_at_10"
     assert NDCGAtK(k=5, name="my_metric").name == "my_metric"
+
+
+# ---------------------------------------------------------------------------
+# HRAtK
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+def test_hr_perfect():
+    """True item is top-1 → HR@10 = 1.0."""
+    import numpy as np
+    import tensorflow as tf
+    from hstu_rec.metrics import HRAtK
+
+    metric = HRAtK(k=10)
+    logits = np.zeros((3, 20), dtype="float32")
+    logits[:, 0] = 10.0
+    metric.update_state(tf.constant([0, 0, 0]), tf.constant(logits))
+    assert metric.result().numpy() == pytest.approx(1.0)
+
+
+@pytest.mark.slow
+def test_hr_miss():
+    """True item ranked outside top-3 → HR@3 = 0.0."""
+    import numpy as np
+    import tensorflow as tf
+    from hstu_rec.metrics import HRAtK
+
+    metric = HRAtK(k=3)
+    logits = np.arange(10, dtype="float32").reshape(1, 10)  # item 9 highest
+    metric.update_state(tf.constant([0]), tf.constant(logits))
+    assert metric.result().numpy() == pytest.approx(0.0)
+
+
+@pytest.mark.slow
+def test_hr_partial():
+    """Half of the batch hits → HR = 0.5."""
+    import numpy as np
+    import tensorflow as tf
+    from hstu_rec.metrics import HRAtK
+
+    metric = HRAtK(k=1)
+    logits = np.zeros((2, 10), dtype="float32")
+    logits[0, 3] = 10.0   # example 0: top-1 is item 3 ✓
+    logits[1, 0] = 10.0   # example 1: top-1 is item 0, true is item 3 ✗
+    metric.update_state(tf.constant([3, 3]), tf.constant(logits))
+    assert metric.result().numpy() == pytest.approx(0.5)
+
+
+@pytest.mark.slow
+def test_hr_name():
+    from hstu_rec.metrics import HRAtK
+
+    assert HRAtK(k=10).name == "hr_at_10"
+    assert HRAtK(k=5, name="my_hr").name == "my_hr"
