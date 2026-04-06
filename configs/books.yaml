@@ -18,3 +18,4 @@ training:
   steps_per_eval: 1000
   steps_per_loop: 100
   model_dir: runs/books
+  num_sampled: 10000

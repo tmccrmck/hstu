@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pandas as pd
@@ -43,7 +42,9 @@ def write_tfrecords(df: pd.DataFrame, max_seq_len: int, output_dir: str | Path) 
     item_map = {asin: idx + 1 for idx, asin in enumerate(unique_asins)}
     vocab_size = len(item_map)
 
-    (out / "item_map.json").write_text(json.dumps(item_map))
+    pd.DataFrame(
+        {"parent_asin": list(item_map.keys()), "item_id": list(item_map.values())}
+    ).to_parquet(out / "item_map.parquet", index=False)
     (out / "vocab_size.txt").write_text(str(vocab_size))
 
     train_writer = tf.io.TFRecordWriter(str(out / "train.tfrecord"))

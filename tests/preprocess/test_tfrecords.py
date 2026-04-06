@@ -4,7 +4,6 @@ Tests marked @pytest.mark.slow call write_tfrecords (which imports TensorFlow)
 and are skipped locally by default. Run on the GPU machine with:
     uv run pytest -m slow
 """
-import json
 from pathlib import Path
 
 import pandas as pd
@@ -51,7 +50,7 @@ def test_write_tfrecords_creates_expected_files(five_users_df, tmp_path):
     assert (tmp_path / "train.tfrecord").exists()
     assert (tmp_path / "val.tfrecord").exists()
     assert (tmp_path / "test.tfrecord").exists()
-    assert (tmp_path / "item_map.json").exists()
+    assert (tmp_path / "item_map.parquet").exists()
     assert (tmp_path / "vocab_size.txt").exists()
 
 
@@ -66,7 +65,8 @@ def test_write_tfrecords_vocab_size(five_users_df, tmp_path):
 def test_write_tfrecords_item_map(five_users_df, tmp_path):
     from hstu_rec.preprocess.tfrecords import write_tfrecords
     write_tfrecords(five_users_df, max_seq_len=50, output_dir=str(tmp_path))
-    item_map = json.loads((tmp_path / "item_map.json").read_text())
+    item_df = pd.read_parquet(tmp_path / "item_map.parquet")
+    item_map = dict(zip(item_df["parent_asin"], item_df["item_id"]))
     assert set(item_map.keys()) == {f"ASIN{i}" for i in range(7)}
     assert min(item_map.values()) == 1
     assert max(item_map.values()) == 7

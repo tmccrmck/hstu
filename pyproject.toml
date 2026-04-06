@@ -9,6 +9,7 @@ dependencies = [
     "tensorflow-io-gcs-filesystem",
     "pandas>=2.0",
     "pyyaml>=6.0",
+    "pyarrow>=16.0",
     "requests>=2.32",
     "tqdm>=4.67",
     # RecML transitive deps (RecML itself is on PYTHONPATH via .env)
@@ -45,4 +46,5 @@ addopts = "-m 'not slow'"
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "pytest-timeout>=2.4.0",
 ]

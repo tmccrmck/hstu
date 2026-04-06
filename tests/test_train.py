@@ -64,8 +64,7 @@ def test_last_non_padding_token_output_shape():
 
 @pytest.mark.slow
 def test_build_model_output_shape():
-    """Model output is (batch, vocab_size + 1)."""
-    import numpy as np
+    """Model output in eval mode is (batch, vocab_size + 1) — full logits."""
     import tensorflow as tf
     from hstu_rec.train import build_model
 
@@ -77,10 +76,32 @@ def test_build_model_output_shape():
         num_layers=1,
         dropout=0.0,
         learning_rate=1e-3,
+        num_sampled=50,
     )
     input_ids = tf.constant([[1, 2, 3, 0, 0], [4, 5, 0, 0, 0]], dtype=tf.int32)
     logits = model({"input_ids": input_ids}, training=False)
     assert logits.shape == (2, 11)  # vocab_size + 1
+
+
+@pytest.mark.slow
+def test_build_model_training_output_shape():
+    """Model output in training mode is (batch, model_dim) — user embedding."""
+    import tensorflow as tf
+    from hstu_rec.train import build_model
+
+    model = build_model(
+        vocab_size=10,
+        max_sequence_length=5,
+        model_dim=16,
+        num_heads=2,
+        num_layers=1,
+        dropout=0.0,
+        learning_rate=1e-3,
+        num_sampled=50,
+    )
+    input_ids = tf.constant([[1, 2, 3, 0, 0], [4, 5, 0, 0, 0]], dtype=tf.int32)
+    user_emb = model({"input_ids": input_ids}, training=True)
+    assert user_emb.shape == (2, 16)  # model_dim
 
 
 @pytest.mark.slow
@@ -95,9 +116,9 @@ def test_build_model_is_compiled():
         num_layers=1,
         dropout=0.0,
         learning_rate=1e-3,
+        num_sampled=50,
     )
     assert model.optimizer is not None
-    assert model.loss is not None
 
 
 # ---------------------------------------------------------------------------
@@ -106,17 +127,16 @@ def test_build_model_is_compiled():
 
 @pytest.mark.slow
 def test_train_main_smoke(tmp_path):
-    """Write a tiny dataset, run main() for a few steps, check model saved."""
+    """Write a tiny dataset, run model.fit() for a few steps without error."""
     import pandas as pd
     from pathlib import Path
     from hstu_rec.preprocess.tfrecords import write_tfrecords
-    from hstu_rec.train import main
-    from hstu_rec.dataset import load_config
+    from hstu_rec.dataset import load_config, make_data_factory
+    from hstu_rec.train import build_model
 
     config_path = Path(__file__).parent.parent / "configs" / "video_games.yaml"
     config = load_config(config_path)
 
-    # Override paths / sizes for speed
     config.model.max_sequence_length = 4
     config.model.model_dim = 16
     config.model.num_heads = 2
@@ -125,19 +145,11 @@ def test_train_main_smoke(tmp_path):
     config.training.train_steps = 4
     config.training.steps_per_loop = 2
     config.training.steps_per_eval = 1
-    config.training.model_dir = str(tmp_path / "model")
+    config.training.num_sampled = 50
 
     rows = [{"user_id": f"u{u}", "parent_asin": f"A{i}", "timestamp": i}
             for u in range(4) for i in range(6)]
     write_tfrecords(pd.DataFrame(rows), max_seq_len=4, output_dir=str(tmp_path))
-
-    # Patch config inside main by calling build_model / fit directly
-    import os
-    os.makedirs(config.training.model_dir, exist_ok=True)
-
-    from hstu_rec.dataset import make_data_factory
-    from hstu_rec.train import build_model
-    import keras
 
     vocab_size = int((tmp_path / "vocab_size.txt").read_text().strip())
     model = build_model(
@@ -148,6 +160,7 @@ def test_train_main_smoke(tmp_path):
         num_layers=config.model.num_layers,
         dropout=0.0,
         learning_rate=config.model.learning_rate,
+        num_sampled=config.training.num_sampled,
     )
     train_ds = make_data_factory(config, str(tmp_path), "train").make()
     val_ds = make_data_factory(config, str(tmp_path), "val").make()
@@ -159,4 +172,3 @@ def test_train_main_smoke(tmp_path):
         epochs=config.training.train_steps // config.training.steps_per_loop,
         validation_steps=config.training.steps_per_eval,
     )
-    # Just verify training ran without error; model.keras saving tested in main()

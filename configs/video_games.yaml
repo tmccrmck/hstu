@@ -18,3 +18,4 @@ training:
   steps_per_eval: 500
   steps_per_loop: 100
   model_dir: runs/video_games
+  num_sampled: 1000

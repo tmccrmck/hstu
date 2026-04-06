@@ -32,6 +32,7 @@ class TrainingConfig:
     steps_per_eval: int
     steps_per_loop: int
     model_dir: str
+    num_sampled: int = 10000
 
 
 @dataclasses.dataclass
