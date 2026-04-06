@@ -30,12 +30,15 @@ Amazon Reviews JSONL.gz
 
 **TFRecord schema** (per example):
 
-| Field       | Type          | Shape          | Notes                          |
-|-------------|---------------|----------------|--------------------------------|
-| `input_ids` | int64         | `[seq_len]`    | Left-zero-padded item IDs      |
-| `target_id` | int64         | `[1]`          | Next item to predict           |
+| Field        | Type          | Shape          | Notes                                      |
+|--------------|---------------|----------------|--------------------------------------------|
+| `input_ids`  | int64         | `[seq_len]`    | Left-zero-padded item IDs                  |
+| `timestamps` | int64         | `[seq_len]`    | Left-zero-padded Unix timestamps (seconds) |
+| `target_id`  | int64         | `[1]`          | Next item to predict                       |
 
 Item IDs: `0` = padding, real items `1..vocab_size`. The embedding table has `vocab_size + 1` rows to accommodate the padding token.
+
+`timestamps` are always written and parsed regardless of `use_timestamps`. This means preprocessing only needs to run once; flipping the flag in the config does not require regenerating TFRecords.
 
 ## Model
 
@@ -45,11 +48,16 @@ The forward pass has two modes that share all weights but differ in what they co
 
 ```
 input_ids  (batch, seq_len)
+timestamps (batch, seq_len)  ← only when use_timestamps=True
      │
      ▼
-  HSTU (RecML)                      vocab_size+1 × model_dim tied embedding
-     │  num_layers × HSTUBlock      causal pointwise attention
-     │  add_head=False              keeps model_dim representation
+[RelativeBucketedTimeAndPositionBasedBias]   log-bucketed pairwise time deltas
+     │  → attention_bias (batch, seq_len, seq_len)   (skipped when use_timestamps=False)
+     │
+     ▼
+  _TimestampHSTU (RecML HSTU subclass)        vocab_size+1 × model_dim tied embedding
+     │  num_layers × HSTUBlock                causal pointwise attention + optional time bias
+     │  add_head=False                         keeps model_dim representation
      ▼
 sequence embeddings  (batch, seq_len, model_dim)
      │
@@ -71,9 +79,10 @@ Cost: O(`num_sampled × model_dim`) per step instead of O(`vocab_size × model_d
 
 ```
 input_ids  (batch, seq_len)
+timestamps (batch, seq_len)  ← only when use_timestamps=True
      │
      ▼
-  HSTU  (same weights, add_head=False)
+  _TimestampHSTU  (same weights, add_head=False)
      │
      ▼
 sequence embeddings  (batch, seq_len, model_dim)
@@ -98,6 +107,7 @@ NDCG@10 / HR@10                     ranked against the full catalogue
 
 - **Tied embeddings (`add_head=False` + manual projection):** the output projection reuses the item embedding weights, reducing parameter count. With `add_head=False` we control *when* the projection runs — only during eval — which is what enables sampled softmax during training.
 - **Sampled softmax:** `num_sampled` negatives are drawn uniformly each step. The gradient is a biased estimator of the full-softmax gradient but converges to the same optimum and is `vocab_size / num_sampled` times cheaper per step. Configured via `training.num_sampled` in the YAML.
+- **Optional timestamp bias (`use_timestamps`):** when enabled, `RelativeBucketedTimeAndPositionBasedBias` converts Unix timestamps to log-bucketed pairwise time differences and adds them as an additive attention bias. This lets the model weight recent interactions more heavily. Setting `use_timestamps: false` (the default) leaves the bias at zero and the model behaves identically to a pure ID-based HSTU. Timestamps are *always* stored in TFRecords and parsed by the data pipeline, so toggling the flag in the config requires no preprocessing rerun. Implemented via `_TimestampHSTU`, a thin subclass that forwards `attention_bias` to each `HSTUBlock` — the upstream `HSTU.call()` accepts the argument but never passes it through.
 - **Causal (lower-triangular) attention mask**: generated from the padding mask so future positions can't attend to padding, and the model is autoregressive over the sequence.
 - **Left-zero-padding**: each training example is a prefix of the user's history. Padding on the left means the model always sees the most recent context in the rightmost positions, which matters for the causal mask.
 - **Leave-last-out**: standard evaluation protocol for sequential recommendation. Val and test each get exactly one example per user; training gets all intermediate positions.
@@ -127,6 +137,7 @@ model:
   num_layers: 4
   dropout: 0.5
   learning_rate: 1e-3
+  use_timestamps: false   # set true to add time-bucketed attention bias
 
 training:
   batch_size: 128
