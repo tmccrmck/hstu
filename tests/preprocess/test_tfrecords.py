@@ -102,6 +102,30 @@ def test_train_example_count(five_users_df, tmp_path):
 
 
 @pytest.mark.slow
+def test_write_tfrecords_timestamps_written(five_users_df, tmp_path):
+    """timestamps field is written and has the same length as input_ids."""
+    from hstu_rec.preprocess.tfrecords import write_tfrecords
+    import tensorflow as tf
+    write_tfrecords(five_users_df, max_seq_len=5, output_dir=str(tmp_path))
+    features = {
+        "input_ids":  tf.io.FixedLenFeature([5], tf.int64),
+        "timestamps": tf.io.FixedLenFeature([5], tf.int64),
+        "target_id":  tf.io.FixedLenFeature([1], tf.int64),
+    }
+    ds = tf.data.TFRecordDataset(str(tmp_path / "val.tfrecord"))
+    for raw in ds:
+        parsed = tf.io.parse_single_example(raw, features)
+        assert parsed["timestamps"].shape == (5,)
+        assert parsed["timestamps"].dtype == tf.int64
+        # padding positions (where input_ids==0) must have timestamp 0
+        ids = parsed["input_ids"].numpy()
+        ts  = parsed["timestamps"].numpy()
+        for i, (iid, t) in enumerate(zip(ids, ts)):
+            if iid == 0:
+                assert t == 0, f"padding position {i} has non-zero timestamp {t}"
+
+
+@pytest.mark.slow
 def test_input_ids_left_padded_and_targets_real(five_users_df, tmp_path):
     from hstu_rec.preprocess.tfrecords import write_tfrecords
     import tensorflow as tf

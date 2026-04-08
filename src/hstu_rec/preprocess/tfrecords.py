@@ -54,35 +54,36 @@ def write_tfrecords(df: pd.DataFrame, max_seq_len: int, output_dir: str | Path) 
     val_writer = tf.io.TFRecordWriter(str(out / "val.tfrecord"))
     test_writer = tf.io.TFRecordWriter(str(out / "test.tfrecord"))
 
-    for _user_id, user_df in df.groupby("user_id"):
-        sorted_df = user_df.sort_values("timestamp")
-        seq = [item_map[asin] for asin in sorted_df["parent_asin"]]
-        ts  = sorted_df["timestamp"].tolist()
-        L   = len(seq)
+    try:
+        for _user_id, user_df in df.groupby("user_id"):
+            sorted_df = user_df.sort_values("timestamp")
+            seq = [item_map[asin] for asin in sorted_df["parent_asin"]]
+            ts  = sorted_df["timestamp"].tolist()
+            L   = len(seq)
 
-        test_writer.write(
-            _make_example(
-                _pad_left(seq[:-1], max_seq_len),
-                _pad_left(ts[:-1],  max_seq_len),
-                seq[-1],
-            ).SerializeToString()
-        )
-        val_writer.write(
-            _make_example(
-                _pad_left(seq[:-2], max_seq_len),
-                _pad_left(ts[:-2],  max_seq_len),
-                seq[-2],
-            ).SerializeToString()
-        )
-        for j in range(1, L - 2):
-            train_writer.write(
+            test_writer.write(
                 _make_example(
-                    _pad_left(seq[:j], max_seq_len),
-                    _pad_left(ts[:j],  max_seq_len),
-                    seq[j],
+                    _pad_left(seq[:-1], max_seq_len),
+                    _pad_left(ts[:-1],  max_seq_len),
+                    seq[-1],
                 ).SerializeToString()
             )
-
-    train_writer.close()
-    val_writer.close()
-    test_writer.close()
+            val_writer.write(
+                _make_example(
+                    _pad_left(seq[:-2], max_seq_len),
+                    _pad_left(ts[:-2],  max_seq_len),
+                    seq[-2],
+                ).SerializeToString()
+            )
+            for j in range(1, L - 2):
+                train_writer.write(
+                    _make_example(
+                        _pad_left(seq[:j], max_seq_len),
+                        _pad_left(ts[:j],  max_seq_len),
+                        seq[j],
+                    ).SerializeToString()
+                )
+    finally:
+        train_writer.close()
+        val_writer.close()
+        test_writer.close()

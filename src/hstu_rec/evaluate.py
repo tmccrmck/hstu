@@ -90,6 +90,8 @@ def main(
 
     # Build weights by running a single dummy forward pass, then load checkpoint.
     dummy = {"input_ids": np.zeros((1, config.model.max_sequence_length), dtype=np.int32)}
+    if config.model.use_timestamps:
+        dummy["timestamps"] = np.zeros((1, config.model.max_sequence_length), dtype=np.int32)
     model(dummy, training=False)
     model.load_weights(model_path)
 

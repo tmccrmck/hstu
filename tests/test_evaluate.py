@@ -91,6 +91,50 @@ def test_evaluate_counts_all_users(tmp_path):
 
 
 @pytest.mark.slow
+def test_evaluate_with_timestamps(tmp_path):
+    """evaluate() works correctly when use_timestamps=True."""
+    import pandas as pd
+    from hstu_rec.preprocess.tfrecords import write_tfrecords
+    from hstu_rec.dataset import load_config, make_data_factory
+    from hstu_rec.train import build_model
+    from hstu_rec.evaluate import evaluate
+    from pathlib import Path
+
+    config_path = Path(__file__).parent.parent / "configs" / "video_games.yaml"
+    config = load_config(config_path)
+    config.model.max_sequence_length = 4
+    config.model.model_dim = 16
+    config.model.num_heads = 2
+    config.model.num_layers = 1
+    config.model.use_timestamps = True
+    config.training.batch_size = 2
+    config.training.num_sampled = 50
+
+    rows = [{"user_id": f"u{u}", "parent_asin": f"A{i}", "timestamp": i * 100}
+            for u in range(5) for i in range(6)]
+    write_tfrecords(pd.DataFrame(rows), max_seq_len=4, output_dir=str(tmp_path))
+
+    vocab_size = int((tmp_path / "vocab_size.txt").read_text().strip())
+    model = build_model(
+        vocab_size=vocab_size,
+        max_sequence_length=config.model.max_sequence_length,
+        model_dim=config.model.model_dim,
+        num_heads=config.model.num_heads,
+        num_layers=config.model.num_layers,
+        dropout=0.0,
+        learning_rate=config.model.learning_rate,
+        num_sampled=config.training.num_sampled,
+        use_timestamps=True,
+    )
+    test_ds = make_data_factory(config, str(tmp_path), "test").make()
+    results = evaluate(model, test_ds)
+
+    assert set(results.keys()) == {"hr@10", "ndcg@10", "n_users"}
+    assert results["n_users"] == 5
+    assert 0.0 <= results["hr@10"] <= 1.0
+
+
+@pytest.mark.slow
 def test_evaluate_load_weights_roundtrip(tmp_path):
     """Save weights, reload, evaluate — results are identical."""
     import numpy as np

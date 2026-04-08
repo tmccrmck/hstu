@@ -30,6 +30,7 @@ dependencies = [
 preprocess = "hstu_rec.preprocess:main"
 train      = "hstu_rec.train:main"
 evaluate   = "hstu_rec.evaluate:main"
+benchmark  = "hstu_rec.benchmark:main"
 
 [build-system]
 requires = ["hatchling"]

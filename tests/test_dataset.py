@@ -53,6 +53,27 @@ def test_load_config_missing_file():
         load_config("/nonexistent/config.yaml")
 
 
+def test_load_config_unknown_field(tmp_path):
+    """Extra YAML keys not in the dataclass raise TypeError."""
+    import yaml
+    cfg = {
+        "dataset": {"name": "x", "review_url": "http://x", "min_interactions": 5},
+        "model": {
+            "vocab_size": None, "max_sequence_length": 10, "model_dim": 16,
+            "num_heads": 2, "num_layers": 1, "dropout": 0.0, "learning_rate": 1e-3,
+            "unknown_field": 42,  # should cause TypeError
+        },
+        "training": {
+            "batch_size": 32, "train_steps": 100, "steps_per_eval": 10,
+            "steps_per_loop": 10, "model_dir": "runs/x",
+        },
+    }
+    p = tmp_path / "bad.yaml"
+    p.write_text(yaml.dump(cfg))
+    with pytest.raises(TypeError):
+        load_config(str(p))
+
+
 # ---------------------------------------------------------------------------
 # TFRecordDataFactory / make_data_factory — fast structural tests (no TF)
 # ---------------------------------------------------------------------------

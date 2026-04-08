@@ -130,3 +130,35 @@ def test_hr_name():
 
     assert HRAtK(k=10).name == "hr_at_10"
     assert HRAtK(k=5, name="my_hr").name == "my_hr"
+
+
+@pytest.mark.slow
+def test_metrics_are_keras_metric_instances():
+    """NDCGAtK and HRAtK are proper keras.metrics.Metric subclasses."""
+    import keras
+    from hstu_rec.metrics import NDCGAtK, HRAtK
+
+    assert isinstance(NDCGAtK(k=10), keras.metrics.Metric)
+    assert isinstance(HRAtK(k=10), keras.metrics.Metric)
+
+
+@pytest.mark.slow
+def test_ndcg_batch_accumulation():
+    """update_state can be called multiple times; result averages all batches."""
+    import numpy as np
+    import tensorflow as tf
+    from hstu_rec.metrics import NDCGAtK
+
+    metric = NDCGAtK(k=10)
+
+    # Batch 1: perfect hit → gain = 1.0
+    logits1 = np.zeros((2, 20), dtype="float32")
+    logits1[:, 0] = 10.0
+    metric.update_state(tf.constant([0, 0]), tf.constant(logits1))
+
+    # Batch 2: complete miss → gain = 0.0
+    logits2 = np.arange(20, dtype="float32").reshape(1, 20)  # item 19 is top
+    metric.update_state(tf.constant([0]), tf.constant(logits2))  # item 0 is rank 20
+
+    # Mean over 3 examples: (1 + 1 + 0) / 3
+    assert metric.result().numpy() == pytest.approx(2 / 3, rel=1e-5)
