@@ -112,6 +112,14 @@ NDCG@10 / HR@10                     ranked against the full catalogue
 - **Left-zero-padding**: each training example is a prefix of the user's history. Padding on the left means the model always sees the most recent context in the rightmost positions, which matters for the causal mask.
 - **Leave-last-out**: standard evaluation protocol for sequential recommendation. Val and test each get exactly one example per user; training gets all intermediate positions.
 
+## Known issues in upstream RecML HSTU (`vendor/RecML/recml/layers/keras/hstu.py`)
+
+These are bugs in the upstream code that we work around or accept for now. If we fork RecML in the future, these should be the first fixes.
+
+1. **`self.final_norm` is applied twice in `HSTU.call()` (lines 601 and 616).** The same `LayerNormalization` layer — one set of gamma/beta weights — is called both before the decoder block loop and after it. Those two points see completely different activation distributions (raw embeddings vs. post-attention outputs), so the shared weights receive conflicting gradient signals during training. Each `HSTUBlock` already applies its own `_input_layer_norm` internally, making the pre-block call redundant as well as harmful. **Fix:** remove the first call (line 601) and keep only the post-block final norm. Affects every forward pass regardless of config.
+
+2. **`HSTU.call()` does not accept or forward `attention_bias` to decoder blocks.** `HSTUBlock.call()` supports an `attention_bias` parameter, and the same file ships `RelativeBucketedTimeAndPositionBasedBias` to produce one, but `HSTU.call()` never wires them together. We work around this with `_TimestampHSTU` in `train.py`, a thin subclass that copy-pastes the entire `HSTU.call()` forward logic to add `attention_bias` forwarding. **Fix:** add `attention_bias` to `HSTU.call()`'s signature and pass it to each block. Only affects `use_timestamps: true` — with the default `false`, `attention_bias` is `None` and the missing forwarding is a no-op.
+
 ## Evaluation
 
 - **HR@10** (Hit Rate at 10): fraction of users where the true next item appears in the top-10 predicted items.
